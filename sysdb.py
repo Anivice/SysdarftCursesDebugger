@@ -1,12 +1,9 @@
 #!/usr/bin/env python
 
-import curses
-from time import sleep
 import sys, os
-component_dir = os.path.dirname(os.path.abspath(__file__)) + "/PySubComponents/"
+component_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(component_dir)
 from PySubComponents.SysdarftDebugger import *
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -20,7 +17,12 @@ if __name__ == "__main__":
 
     try:
         version = dbg.req_api_ver()
-        print("Backend connected, Debugger Backend Version is ", version)
+        print("Backend connected, Sysdarft debugger backend version is", version + ".")
+
+        result = dbg.req_continue()
+        if result.status_code == 400:
+            print(f"Requesting continue failed: {result.json()["Result"]}")
+
     except TargetUnreachable as e:
         print("Cannot connect to target: ", e.message)
         sys.exit(1)

@@ -29,5 +29,11 @@ class SysDbg:
 
         return json_parsed_response["Version"]
 
-    # def req_continue(self):
+    def req_continue(self):
+        response = requests.post(self.target + "/Continue")
+        json_parsed_response = response.json()
 
+        if not "Result" in json_parsed_response:
+            raise BackendAPIIncorrectResponse(self.target + " provides an incorrect API")
+
+        return response
