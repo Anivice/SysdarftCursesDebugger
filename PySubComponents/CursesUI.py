@@ -1,4 +1,7 @@
 import curses
+import threading
+from time import sleep
+
 
 class w_TextArea:
     def __init__(self, stdscr, title, begin_x, begin_y, height, width):
@@ -27,7 +30,18 @@ class w_DisassembledArea(w_TextArea):
         begin_x = int((cols - width) / 2)
         if cols < width:
             begin_x = 1
-        w_TextArea.__init__(self, stdscr, title, begin_x, 1, 24, width)
+        w_TextArea.__init__(self, stdscr, title, begin_x, 1, 20, width)
+
+
+class w_StatusBar(w_TextArea):
+    def __init__(self, stdscr, title="Status"):
+        width = 160
+        # calculate geometry
+        rows, cols = stdscr.getmaxyx()
+        begin_x = int((cols - width) / 2)
+        if cols < width:
+            begin_x = 1
+        w_TextArea.__init__(self, stdscr, title, begin_x, 21, 4, width)
 
 
 class w_WatcherArea(w_TextArea):
@@ -110,6 +124,11 @@ class w_DataRegionArea(w_TextArea):
 
         content = bytes(content, "utf-8").decode("unicode_escape")
 
+        for x in range(1, 78):
+            for y in range(1, n_height):
+                w_view.move(y, x)
+                w_view.addch(' ')
+
         for ch in content:
             if ch == '\n':
                 offset_y += 1
@@ -132,44 +151,83 @@ class w_DataRegionArea(w_TextArea):
 
 class w_CommandView(w_TextArea):
     def __init__(self, stdscr, title="Command View"):
+        self.cursor_position = [1, 1]
         width = 160
         # calculate geometry
         rows, cols = stdscr.getmaxyx()
         begin_x = int((cols - width) / 2)
         if cols < width:
             begin_x = 1
-        w_TextArea.__init__(self, stdscr, title, begin_x, 49, 4, width)
+        w_TextArea.__init__(self, stdscr, title, begin_x, 49, 3, width)
+
+    def reset_cursor_pos(self):
+        curses.curs_set(True)
+        self.w_Handler.move(self.cursor_position[0], self.cursor_position[1])
+        self.w_Handler.refresh()
+
+    def clear(self):
+        self.reset_cursor_pos()
+        curses.curs_set(False)
+        for x in range(1, 159):
+            self.w_Handler.move(1, x)
+            self.w_Handler.addch(' ')
+        curses.curs_set(True)
+        self.w_Handler.refresh()
 
 
-def MainWindowHandler(stdscr):
-    stdscr.keypad(True)
-    stdscr.clear()
-    stdscr.refresh()
-    curses.curs_set(False)
-    DisassembledCodeDisplay = w_DisassembledArea(stdscr)
-    WatcherDisplay = w_WatcherArea(stdscr)
-    DataRegionArea = w_DataRegionArea(stdscr)
-    CommandView = w_CommandView(stdscr)
+class Screen:
+    def __init__(self):
+        self.Status = None
+        self.DataRegionArea = None
+        self.WatcherDisplay = None
+        self.CommandView = None
+        self.DisassembledCodeDisplay = None
+        self.InputStream = ""
+        curses.wrapper(self.MainWindowHandler)
 
-    data = (
-        '00000000000C1810: 6402 6437 0100 0000  0000 0002 6400 0000   d.d7........d...\\n' +
+    def MainWindowHandler(self, stdscr):
+        stdscr.keypad(True)
+        stdscr.clear()
+        stdscr.refresh()
+        curses.curs_set(False)
+
+        self.DisassembledCodeDisplay = w_DisassembledArea(stdscr)
+        self.CommandView = w_CommandView(stdscr)
+        self.WatcherDisplay = w_WatcherArea(stdscr)
+        self.DataRegionArea = w_DataRegionArea(stdscr)
+        self.Status = w_StatusBar(stdscr)
+        self.CommandView.reset_cursor_pos()
+
+    def refresh(self):
+        self.DisassembledCodeDisplay.w_Handler.refresh()
+        self.CommandView.w_Handler.refresh()
+        self.WatcherDisplay.w_Handler.refresh()
+        self.DataRegionArea.w_Handler.refresh()
+        self.Status.w_Handler.refresh()
+
+
+data = ('00000000000C1810: 6402 6437 0100 0000  0000 0002 6400 0000   d.d7........d...\\n' +
         '00000000000C1820: 0000 0000 0051 6402  6438 0100 0000 0000   .....Qd.d8......\\n' +
         '00000000000C1830: 0002 6404 0000 0000  0000 0020 6401 6400   ..d........ d.d.\\n' +
         '00000000000C1840: 0264 0008 0000 0000  0000 5264 0264 3901   .d........Rd.d9.\\n' +
         '00000000000C1850: 0000 0000 0000 2532  2420 6401 6400 0264   ......%2$ d.d..d\\n' +
-        '00000000000C1860: D007 0000 0000 0000  2064 0164 A402 6400   ........ d.d..d.\\n' +
-        '00000000000C1870: 800B 0000 0000 0028  3902 6418 0000 0000   .......(9.d.....\\n' +
-        '00000000000C1880: 0000 0020 1601 1600  0264 CF07 0000 0000   ... .....d......\\n' +
-        '00000000000C1890: 0000 3902 6411 0000  0000 0000 0025 3224   ..9.d........%2$\\n' +
-        '00000000000C18A0: 3902 6414 0000 0000  0000 000A 0801 0800   9.d.............\\n' +
-        '00000000000C18B0: 0264 7100 0000 0000  0000 3301 64A2 0264   .dq.......3.d..d\\n')
+        '00000000000C1860: D007 0000 0000 0000  2064 0164 A402 6400   ........ d.d..d.\\n')
+data2 = ('00000000000C1870: 800B 0000 0000 0028  3902 6418 0000 0000   .......(9.d.....\\n' +
+         '00000000000C1880: 0000 0020 1601 1600  0264 CF07 0000 0000   ... .....d......\\n' +
+         '00000000000C1890: 0000 3902 6411 0000  0000 0000 0025 3224   ..9.d........%2$\\n' +
+         '00000000000C18A0: 3902 6414 0000 0000  0000 000A 0801 0800   9.d.............\\n' +
+         '00000000000C18B0: 0264 7100 0000 0000  0000 3301 64A2 0264   .dq.......3.d..d\\n')
 
-    DataRegionArea.set_view(0, data)
-    DataRegionArea.set_view(1, data)
-    DataRegionArea.set_view(2, data)
+screen = Screen()
+screen.DataRegionArea.set_view(0, data)
+screen.DataRegionArea.set_view(1, data)
+screen.DataRegionArea.set_view(2, data)
+sleep(1)
+screen.DataRegionArea.set_view(0, data2)
+sleep(1)
+print(screen.InputStream)
 
-    stdscr.getkey()
-
-
-curses.wrapper(MainWindowHandler)
-
+while True:
+    cmd = screen.CommandView.w_Handler.getkey()
+    screen.CommandView.clear()
+    screen.CommandView.reset_cursor_pos()
